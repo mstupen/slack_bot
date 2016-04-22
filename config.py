@@ -6,6 +6,7 @@ AUTH_TOKEN = 'key'
 # [Redmine]
 
 REDMINE_URL = 'https://redmine.grin.com'
+REDMINE_KEY = 'key'
 REDMINE_USERS = {
     'jm': 15,
     'julius': 15,
@@ -27,4 +28,4 @@ REDMINE_USERS = {
     'mary': 86,
 }
 
-import * from config.local
+from config_local import *

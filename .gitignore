@@ -1,2 +1,2 @@
-config.local.py
+config_local.py
 *.pyc
