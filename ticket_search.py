@@ -52,7 +52,6 @@ class Bot:
                 print("Exception: ", e.message)
 
     def get_issue_repr(self, issue):
-        print issue, 'asd'
         return "*{id}*: _{subject}_ *{status}* {assignee}".format(
             id=issue.id,
             subject=issue.subject,
@@ -114,7 +113,6 @@ class Bot:
         PATTERN = 'issues/(\d{4,5})'
 
         text = message['text'].lower()
-        print text
 
         m = self.RE_HELP.match(text)
         if m:
