@@ -1,0 +1,4 @@
+{
+    "redmine": "*{task}*: _{title}_",
+    "uptime": "sys:uptime"
+}
