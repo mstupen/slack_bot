@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
-import argparse, ConfigParser, sys, json, os
+import argparse
+import json
+import os
 from redmine import Redmine
 from slackclient import SlackClient
 from time import sleep
 import re
 
-from config import REDMINE_KEY, REDMINE_URL, AUTH_TOKEN
+from config import REDMINE_KEY, REDMINE_URL, AUTH_TOKEN, REDMINE_USERS
+
 
 class Bot:
     """This is a super bot"""
@@ -14,6 +17,11 @@ class Bot:
     client = None
     debug = False
     my_user_name = ''
+
+    RE_HELP = re.compile(r'^help$')
+    RE_ISSUE_INFO = re.compile(r'^issue (?P<issue_id>\d{3,5})$')
+    RE_ISSUE_SET_STATUS = re.compile(r'^issue (?P<issue_id>\d{3,5}) status (?P<status_name>.*)$')
+    RE_ISSUE_ASSIGN = re.compile(r'^issue (?P<issue_id>\d{3,5}) assign (?P<user_name>.*)$')
 
     def connect(self, token):
         self.redmine = Redmine(REDMINE_URL, key=REDMINE_KEY, requests={'verify': False})
@@ -41,9 +49,83 @@ class Bot:
             except Exception as e:
                 print("Exception: ", e.message)
 
+    def get_issue_repr(self, issue):
+        return "*{id}*: _{subject}_ *{status}* {assignee}".format(
+            id=issue.id,
+            subject=issue.subject,
+            status=issue.status,
+            assignee=('(assigned to %s)' % issue.assigned_to) if issue.assigned_to else '(unassigned)'
+        )
+
+    def process_message_help(self):
+        return '\n'.join([
+            '*help* - show help',
+            '*issue <issue_id>* - show issue info',
+            '*issue <issue_id> assign <user_name>* - change issue assignee',
+            '*issue <issue_id> status <status>* - change issue status',
+        ])
+
+    def process_message_issue_info(self, issue_id):
+        issue = self.redmine.issue.get(issue_id)
+        return self.get_issue_repr(issue)
+
+    def process_message_issue_set_status(self, issue_id, status_name):
+        issue = self.redmine.issue.get(issue_id)
+        statuses = self.redmine.issue_status.all()
+
+        set_status_id = None
+        for status in statuses:
+            if status.name.lower() == status_name.lower():
+                set_status_id = status.id
+
+        if set_status_id is None:
+            return 'Unknown status, possible: %s' % ', '.join([i.name for i in statuses])
+
+        issue.status_id = set_status_id
+        issue.save()
+
+        issue = self.redmine.issue.get(issue_id)
+        return self.get_issue_repr(issue)
+
+    def process_message_issue_assign(self, issue_id, user_name):
+        issue = self.redmine.issue.get(issue_id)
+        users = REDMINE_USERS
+
+        if user_name.lower() not in users:
+            return 'Unknown user, possible: %s' % ', '.join([i.capitalize() for i in users.keys()])
+
+        set_assigned_to_id = users[user_name.lower()]
+        issue.assigned_to_id = set_assigned_to_id
+        issue.save()
+
+        issue = self.redmine.issue.get(issue_id)
+        return self.get_issue_repr(issue)
+
     def process_message(self, message):
         """Magic method"""
         PATTERN = 'issues/(\d{4,5})'
+
+        text = message['text'].lower()
+
+        m = self.RE_HELP.match(text)
+        if m:
+            response = self.process_message_help()
+            return self.post(message['channel'], response)
+
+        m = self.RE_ISSUE_INFO.match(text)
+        if m:
+            response = self.process_message_issue_info(m.group('issue_id'))
+            return self.post(message['channel'], response)
+
+        m = self.RE_ISSUE_SET_STATUS.match(text)
+        if m:
+            response = self.process_message_issue_set_status(m.group('issue_id'), m.group('status_name'))
+            return self.post(message['channel'], response)
+
+        m = self.RE_ISSUE_ASSIGN.match(text)
+        if m:
+            response = self.process_message_issue_assign(m.group('issue_id'), m.group('user_name'))
+            return self.post(message['channel'], response)
 
         for topic in self.topics.keys():
             if topic.lower() in message['text'].lower():
@@ -61,7 +143,7 @@ class Bot:
 
     def get_issue_title(self, issue_number):
         """Gets issue subject from redmine server."""
-        #project = redmine.project.get('dev-ideas')
+        # project = redmine.project.get('dev-ideas')
 
         issue = self.redmine.issue.get(issue_number, include='children,journals,watchers')
         return issue.subject
@@ -82,7 +164,7 @@ if __name__ == "__main__":
 This script posts responses to trigger phrases.
 Exec with:
 ticket_search.py keys.json
-''', epilog='''''' )
+''', epilog='''''')
     parser.add_argument('-d', action='store_true', help="Print debug output.")
     parser.add_argument('topics_file', type=str, nargs=1,
                         help='JSON of phrases/responses to read.')
