@@ -1,12 +1,12 @@
 # [Slack]
 
 
-AUTH_TOKEN = 'key'
+AUTH_TOKEN = 'define in config_local.py'
 
 # [Redmine]
 
 REDMINE_URL = 'https://redmine.grin.com'
-REDMINE_KEY = 'key'
+REDMINE_KEY = 'define in config_local.py'
 REDMINE_USERS = {
     'jm': 15,
     'julius': 15,

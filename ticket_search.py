@@ -47,14 +47,17 @@ class Bot:
                 else:
                     sleep(1)
             except Exception as e:
+                if self.debug:
+                    raise
                 print("Exception: ", e.message)
 
     def get_issue_repr(self, issue):
+        print issue, 'asd'
         return "*{id}*: _{subject}_ *{status}* {assignee}".format(
             id=issue.id,
             subject=issue.subject,
             status=issue.status,
-            assignee=('(assigned to %s)' % issue.assigned_to) if issue.assigned_to else '(unassigned)'
+            assignee=('(assigned to %s)' % issue.assigned_to) if hasattr(issue, 'assigned_to') else '(unassigned)'
         )
 
     def process_message_help(self):
@@ -66,8 +69,13 @@ class Bot:
         ])
 
     def process_message_issue_info(self, issue_id):
-        issue = self.redmine.issue.get(issue_id)
-        return self.get_issue_repr(issue)
+        issue = self.redmine.issue.get(issue_id, include='children')
+        child_ids = [child.id for child in issue.children]
+        children = [self.redmine.issue.get(child_id) for child_id in child_ids]
+        return "{info}{children}".format(
+            info=self.get_issue_repr(issue),
+            children=(''.join(['\n    > %s' % self.get_issue_repr(i) for i in children])) if children else '',
+        )
 
     def process_message_issue_set_status(self, issue_id, status_name):
         issue = self.redmine.issue.get(issue_id)
@@ -106,6 +114,7 @@ class Bot:
         PATTERN = 'issues/(\d{4,5})'
 
         text = message['text'].lower()
+        print text
 
         m = self.RE_HELP.match(text)
         if m:
