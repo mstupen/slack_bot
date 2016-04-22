@@ -1,55 +1,31 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 
 import argparse
 import json
 import os
+import sys
 from redmine import Redmine
 from slackclient import SlackClient
 from time import sleep
 import re
 
-from config import REDMINE_KEY, REDMINE_URL, AUTH_TOKEN, REDMINE_USERS
+from config import BOT_USER, REDMINE_KEY, REDMINE_URL, AUTH_TOKEN, REDMINE_USERS
+
+import time
 
 
-class Bot:
-    """This is a super bot"""
-    topics = {}
-    client = None
-    debug = False
-    my_user_name = ''
+
+class MessageProcessor:
+    """Will check all messages for you."""
 
     RE_HELP = re.compile(r'^help$')
+    RE_ISSUE_FROM_LINK = re.compile(r'com/issues/(?P<issue_id>\d{3,5})')
     RE_ISSUE_INFO = re.compile(r'^issue (?P<issue_id>\d{3,5})$')
     RE_ISSUE_SET_STATUS = re.compile(r'^issue (?P<issue_id>\d{3,5}) status (?P<status_name>.*)$')
     RE_ISSUE_ASSIGN = re.compile(r'^issue (?P<issue_id>\d{3,5}) assign (?P<user_name>.*)$')
 
-    def connect(self, token):
+    def __init__(self):
         self.redmine = Redmine(REDMINE_URL, key=REDMINE_KEY, requests={'verify': False})
-        self.client = SlackClient(token)
-        self.client.rtm_connect()
-        self.my_user_name = self.client.server.username
-        print 'Connected to Slack.'
-
-    def listen(self):
-        """Listens for messages from slack. endless"""
-        while True:
-            try:
-                some_input = self.client.rtm_read()
-                if some_input:
-                    for action in some_input:
-                        if self.debug:
-                            print action
-                        if 'type' in action and action['type'] == "message":
-                            # Uncomment to only respond to messages addressed to us.
-                            # if 'text' in action
-                            #     and action['text'].lower().startswith(self.my_user_name):
-                            self.process_message(action)
-                else:
-                    sleep(1)
-            except Exception as e:
-                if self.debug:
-                    raise
-                print("Exception: ", e.message)
 
     def get_issue_repr(self, issue):
         return "*{id}*: _{subject}_ *{status}* {assignee}".format(
@@ -108,86 +84,115 @@ class Bot:
         issue = self.redmine.issue.get(issue_id)
         return self.get_issue_repr(issue)
 
-    def process_message(self, message):
+    def process(self, message):
         """Magic method"""
-        PATTERN = 'issues/(\d{4,5})'
 
         text = message['text'].lower()
 
         m = self.RE_HELP.match(text)
         if m:
             response = self.process_message_help()
-            return self.post(message['channel'], response)
+            return response
+
+        m = self.RE_ISSUE_FROM_LINK.search(text)
+        if m:
+            response = self.process_message_issue_info(m.group('issue_id'))
+            return response
 
         m = self.RE_ISSUE_INFO.match(text)
         if m:
             response = self.process_message_issue_info(m.group('issue_id'))
-            return self.post(message['channel'], response)
+            return response
 
         m = self.RE_ISSUE_SET_STATUS.match(text)
         if m:
             response = self.process_message_issue_set_status(m.group('issue_id'), m.group('status_name'))
-            return self.post(message['channel'], response)
+            return response
 
         m = self.RE_ISSUE_ASSIGN.match(text)
         if m:
             response = self.process_message_issue_assign(m.group('issue_id'), m.group('user_name'))
-            return self.post(message['channel'], response)
+            return response
 
-        for topic in self.topics.keys():
-            if topic.lower() in message['text'].lower():
-                res = re.search(PATTERN, message['text'].lower())
-                if res and len(res.groups()):
-                    issue = res.groups()[0]
-                    message['task'] = issue
-                    message['title'] = self.get_issue_title(issue)
-                    print 'Issue ', res
-                response = self.topics[topic].format(**message)
-                if response.startswith('sys:'):
-                    response = os.popen(response[4:]).read()
-                print "Posting to [%s]: %s" % (message['channel'], response,)
-                self.post(message['channel'], response)
+class Bot:
+    """This is a super bot"""
+    client = None
+    my_user_name = ''
 
-    def get_issue_title(self, issue_number):
-        """Gets issue subject from redmine server."""
-        # project = redmine.project.get('dev-ideas')
+    def __init__(self, token, debug):
+        self.client = SlackClient(token)
+        self.client.rtm_connect()
+        self.debug = debug
+        self.my_user_name = self.client.server.username
+        self.mp = MessageProcessor()
+        print 'Connected to Slack.'
 
-        issue = self.redmine.issue.get(issue_number, include='children,journals,watchers')
-        return issue.subject
+    # def _skip_processing(self, action):
+    #     skip = False
+    #     actions = [ 'hello', 'user_typing', 'presence_change' ]
+    #     if 'user' in action and action['user'] == BOT_USER:
+    #         if self.debug:
+    #             print 'Skip processing bot messages: ', action
+    #             skip = True
+    #     if 'type' in action and action['type'] in actions:
+    #         if self.debug:
+    #             print 'Skip processing action: ', action['type']
+    #             skip = True
+    #
+    #     return skip
 
-    def post(self, channel, message):
+
+    def start(self):
+        """Listens for messages from slack. endless"""
+        while True:
+            some_input = self.client.rtm_read()
+            if some_input:
+                for action in some_input:
+                    # if not action or self._skip_processing(action):
+                    #     break
+                    if self.debug:
+                        print 'Processing: ', action
+                    if 'type' in action and action['type'] == "message":
+                        # Uncomment to only respond to messages addressed to us.
+                        # if 'text' in action
+                        #     and action['text'].lower().startswith(self.my_user_name):
+                        self.process_action(action)
+            else:
+                sleep(1)
+
+    def process_action(self, action):
+        response = self.mp.process(action)
+
+        return self.reply(action['channel'], response)
+
+    def reply(self, channel, message):
         chan = self.client.server.channels.find(channel)
 
         if not chan:
-            raise Exception("Channel %s not found." % channel)
-
+            raise Exception('Channel %s not found.' % (channel,) )
         return chan.send_message(message)
+
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='''
-This script posts responses to trigger phrases.
+This script replies responses to trigger phrases.
 Exec with:
 ticket_search.py keys.json
-''', epilog='''''')
+''', epilog='')
     parser.add_argument('-d', action='store_true', help="Print debug output.")
     parser.add_argument('topics_file', type=str, nargs=1,
                         help='JSON of phrases/responses to read.')
     args = parser.parse_args()
 
     # Create a new Bot
-    conv = Bot()
+    bot = Bot(AUTH_TOKEN, args.d)
 
-    if args.d:
-        conv.debug = True
-
-    conv.connect(AUTH_TOKEN)
-
-    # Add our topics to the Bot
-    with open(args.topics_file[0]) as data_file:
-        conv.topics = json.load(data_file)
-
-    # Run loop
-    conv.listen()
+    try:
+        bot.start()
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception as e:
+        print 'Exception: ', e.message

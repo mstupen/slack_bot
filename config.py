@@ -1,7 +1,7 @@
 # [Slack]
 
-
 AUTH_TOKEN = 'define in config_local.py'
+BOT_USER = 'U12VA2G8P'
 
 # [Redmine]
 
