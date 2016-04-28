@@ -26,6 +26,15 @@ REDMINE_USERS = {
     'matthias': 12,
     'msh': 86,
     'mary': 86,
+    'ch': 66,
+    'christian': 66,
+
+    'jm@grin.com': 15,
+    'js@grin.com': 9,
+    'ch@grin.com': 66,
+    'ms@grin.com': 71,
+    'mjs@grin.com': 12,
+    'nt@grin.com': 4,
 }
 
 from config_local import *
