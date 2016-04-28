@@ -20,6 +20,12 @@ class MessageProcessor(object):
     RE_ISSUE_ASSIGN = re.compile(r'^issue (?P<issue_id>\d{3,6}) assign (?P<user_name>.*)$')
     RE_ISSUES = re.compile(r'^issues (?P<user_name>.*)$')
     RE_ISSUE_ADD_CHILD = re.compile(r'^issue (?P<issue_id>\d{3,6}) add (?P<subject>.*)$')
+    RE_ISSUE_ADD_NOTE = re.compile(r'^issue (?P<issue_id>\d{3,6}) note (?P<note>.*)$')
+    RE_ISSUE_SET_SUBJECT = re.compile(r'^issue (?P<issue_id>\d{3,6}) subject (?P<subject>.*)$')
+    RE_ISSUE_ASSIGN_AUTO = re.compile(r'^issue (?P<issue_id>\d{3,6}) assign$')
+    RE_ISSUES_AUTO = re.compile(r'^issues$')
+
+    MESSAGE_USER_NOT_FOUND = 'Unknown user, possible: %s' % ', '.join([i.capitalize() for i in config.REDMINE_USERS.keys()])
 
     def __init__(self):
         self.redmine = Redmine(config.REDMINE_URL, key=config.REDMINE_KEY, requests={'verify': False})
@@ -44,6 +50,17 @@ class MessageProcessor(object):
 
         return
 
+    def _get_user_id_by_user_profile(self, user_profile):
+        user_id = self._get_user_id_by_user_name(user_profile.get('email'))
+        if user_id:
+            return user_id
+
+        user_id = self._get_user_id_by_user_name(user_profile.get('first_name'))
+        if user_id:
+            return user_id
+
+        return
+
     def _get_issue_repr_detailed(self, issue):
         child_ids = [child.id for child in issue.children]
         children = [self.redmine.issue.get(child_id) for child_id in child_ids]
@@ -56,10 +73,14 @@ class MessageProcessor(object):
         return '\n'.join([
             '*help* - show help',
             '*issue <issue_id>* - show issue info',
+            '*issue <issue_id> assign* - assign task to me',
             '*issue <issue_id> assign <user_name>* - change issue assignee',
             '*issue <issue_id> status <status>* - change issue status',
-            '*issues <user_name>* - show all open issues for user',
+            '*issue <issue_id> subject <subject>* - change issue subject',
+            '*issue <issue_id> note <note>* - add new note to description',
             '*issue <issue_id> add <subject>* - add new subtask to issue',
+            '*issues <user_name>* - show all open issues for user',
+            '*issues* - show all open issues assigned to me',
         ])
 
     def process_message_issue_add_child(self, issue_id, subject):
@@ -82,7 +103,25 @@ class MessageProcessor(object):
     def process_message_issues(self, user_name):
         user_id = self._get_user_id_by_user_name(user_name)
         if user_id is None:
-            return 'Unknown user, possible: %s' % ', '.join([i.capitalize() for i in config.REDMINE_USERS.keys()])
+            return self.MESSAGE_USER_NOT_FOUND
+
+        issues = [i for i in self.redmine.issue.filter(assigned_to_id=85, status='open')]
+        issue_ids = [i.id for i in issues]
+
+        stories = [i for i in issues if not hasattr(i, 'parent')]
+        standalone_tickets = [i for i in issues if hasattr(i, 'parent') and i.parent.id not in issue_ids]
+        standalone_tickets_str = '\n'.join(map(lambda issue: self._get_issue_repr(issue), standalone_tickets))
+
+        return '{stories}{tickets}{empty}'.format(
+            stories=('*Stories:*\n%s\n\n' % '\n'.join(map(lambda issue: self._get_issue_repr(issue), stories))) if stories else '',
+            tickets=('*Standalone tickets:*\n%s\n\n' % standalone_tickets_str) if standalone_tickets else '',
+            empty='No issues found' if not stories and not standalone_tickets else '',
+        )
+
+    def process_message_issues_auto(self, user_profile):
+        user_id = self._get_user_id_by_user_profile(user_profile)
+        if user_id is None:
+            return self.MESSAGE_USER_NOT_FOUND
 
         issues = [i for i in self.redmine.issue.filter(assigned_to_id=85, status='open')]
         issue_ids = [i.id for i in issues]
@@ -121,19 +160,49 @@ class MessageProcessor(object):
 
     def process_message_issue_assign(self, issue_id, user_name):
         issue = self.redmine.issue.get(issue_id)
-        users = config.REDMINE_USERS
 
-        if user_name.lower() not in users:
-            return 'Unknown user, possible: %s' % ', '.join([i.capitalize() for i in users.keys()])
+        user_id = self._get_user_id_by_user_name(user_name)
+        if user_id is None:
+            return self.MESSAGE_USER_NOT_FOUND
 
-        set_assigned_to_id = users[user_name.lower()]
-        issue.assigned_to_id = set_assigned_to_id
+        issue.assigned_to_id = user_id
+        issue.save()
+
+    def process_message_issue_assign_auto(self, user_profile, issue_id):
+        issue = self.redmine.issue.get(issue_id)
+
+        user_id = self._get_user_id_by_user_profile(user_profile)
+        if user_id is None:
+            return self.MESSAGE_USER_NOT_FOUND
+
+        issue.assigned_to_id = user_id
         issue.save()
 
         issue = self.redmine.issue.get(issue_id)
         return self._get_issue_repr(issue)
 
-    def process(self, message):
+    def process_message_issue_set_subject(self, issue_id, subject):
+        issue = self.redmine.issue.get(issue_id)
+        issue.subject = subject
+        issue.save()
+
+        issue = self.redmine.issue.get(issue_id)
+        return self._get_issue_repr(issue)
+
+    def process_message_issue_add_note(self, user_profile, issue_id, note):
+        issue = self.redmine.issue.get(issue_id)
+        issue.description = '{old}\n\nh3. {title}\n\n{note}'.format(
+            old=issue.description,
+            title='Added via Slack by %s' % (user_profile['real_name']),
+            note=note,
+        )
+        issue.save()
+        return 'Description updated'
+
+        # issue = self.redmine.issue.get(issue_id)
+        # return self._get_issue_repr(issue)
+
+    def process(self, message, user_info):
         """Magic method"""
 
         if 'text' not in message:
@@ -176,6 +245,26 @@ class MessageProcessor(object):
             response = self.process_message_issue_add_child(m.group('issue_id'), m.group('subject'))
             return response
 
+        m = self.RE_ISSUE_SET_SUBJECT.match(text)
+        if m:
+            response = self.process_message_issue_set_subject(m.group('issue_id'), m.group('subject'))
+            return response
+
+        m = self.RE_ISSUE_ADD_NOTE.match(text)
+        if m:
+            response = self.process_message_issue_add_note(user_info, m.group('issue_id'), m.group('note'))
+            return response
+
+        m = self.RE_ISSUES_AUTO.match(text)
+        if m:
+            response = self.process_message_issues_auto(user_info)
+            return response
+
+        m = self.RE_ISSUE_ASSIGN_AUTO.match(text)
+        if m:
+            response = self.process_message_issue_assign_auto(user_info, m.group('issue_id'))
+            return response
+
 
 class Bot(object):
     """This is a super bot"""
@@ -188,6 +277,7 @@ class Bot(object):
         self.debug = debug
         self.my_user_name = self.client.server.username
         self.mp = MessageProcessor()
+        self.users = {}
         print 'Connected to Slack.'
 
     # def _skip_processing(self, action):
@@ -222,8 +312,16 @@ class Bot(object):
             else:
                 sleep(1)
 
+    def _get_user_profile_for_action(self, action):
+        user_id = action['user']
+        if user_id not in self.users:
+            self.users[user_id] = self.client.api_call('users.info', user=action['user'])['user']['profile']
+
+        return self.users[user_id]
+
     def process_action(self, action):
-        response = self.mp.process(action)
+        user_info = self._get_user_profile_for_action(action)
+        response = self.mp.process(action, user_info)
         if response is None:
             return
 
@@ -258,5 +356,3 @@ ticket_search.py keys.json
         bot.start()
     except KeyboardInterrupt:
         sys.exit(0)
-    except Exception as e:
-        print 'Exception: ', e.message
