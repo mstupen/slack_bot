@@ -32,10 +32,10 @@ class MessageProcessor(object):
 
     def _get_issue_repr(self, issue):
         return u'*{id}*: _{subject}_ *{status}* {assignee}'.format(
-            id=issue.id or 'Not saved',
+            id=issue.id or u'Not saved',
             subject=issue.subject,
-            status=issue.status if hasattr(issue, 'status') and issue.status else 'New',
-            assignee=('(assigned to %s)' % issue.assigned_to) if hasattr(issue, 'assigned_to') and issue.assigned_to else '(unassigned)'
+            status=issue.status if hasattr(issue, u'status') and issue.status else u'New',
+            assignee=(u'(assigned to %s)' % issue.assigned_to.name) if hasattr(issue, u'assigned_to') and issue.assigned_to else u'(unassigned)'
         )
 
     def _get_user_id_by_user_name(self, user_name):
@@ -66,7 +66,7 @@ class MessageProcessor(object):
         children = [self.redmine.issue.get(child_id) for child_id in child_ids]
         return u'{info}{children}'.format(
             info=self._get_issue_repr(issue),
-            children=(u''.join([u'\n    > %s' % self._get_issue_repr(i) for i in children])) if children else '',
+            children=(u''.join([u'\n    > %s' % self._get_issue_repr(i) for i in children])) if children else u'',
         )
 
     def process_message_help(self):
