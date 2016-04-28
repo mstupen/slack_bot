@@ -31,7 +31,8 @@ class MessageProcessor(object):
         self.redmine = Redmine(config.REDMINE_URL, key=config.REDMINE_KEY, requests={'verify': False})
 
     def _get_issue_repr(self, issue):
-        return "*{id}*: _{subject}_ *{status}* {assignee}".format(
+        print issue.id
+        return u'*{id}*: _{subject}_ *{status}* {assignee}'.format(
             id=issue.id or 'Not saved',
             subject=issue.subject,
             status=issue.status if hasattr(issue, 'status') and issue.status else 'New',
@@ -64,13 +65,13 @@ class MessageProcessor(object):
     def _get_issue_repr_detailed(self, issue):
         child_ids = [child.id for child in issue.children]
         children = [self.redmine.issue.get(child_id) for child_id in child_ids]
-        return "{info}{children}".format(
+        return u'{info}{children}'.format(
             info=self._get_issue_repr(issue),
-            children=(''.join(['\n    > %s' % self._get_issue_repr(i) for i in children])) if children else '',
+            children=(u''.join([u'\n    > %s' % self._get_issue_repr(i) for i in children])) if children else '',
         )
 
     def process_message_help(self):
-        return '\n'.join([
+        return u'\n'.join([
             '*help* - show help',
             '*issue <issue_id>* - show issue info',
             '*issue <issue_id> assign* - assign task to me',
@@ -300,15 +301,20 @@ class Bot(object):
             some_input = self.client.rtm_read()
             if some_input:
                 for action in some_input:
-                    # if not action or self._skip_processing(action):
-                    #     break
                     if self.debug:
                         print 'Processing: ', action
-                    if 'type' in action and action['type'] == "message":
-                        # Uncomment to only respond to messages addressed to us.
-                        # if 'text' in action
-                        #     and action['text'].lower().startswith(self.my_user_name):
-                        self.process_action(action)
+
+                    if 'type' not in action:
+                        continue
+                    if 'user' not in action:
+                        continue
+                    if action['type'] == "message":
+                        try:
+                            self.process_action(action)
+                        except Exception as e:
+                            if self.debug:
+                                raise
+                            print e
             else:
                 sleep(1)
 
