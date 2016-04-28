@@ -26,8 +26,6 @@ REDMINE_USERS = {
     'matthias': 12,
     'msh': 86,
     'mary': 86,
-
-    'U10MA3D1U': 85,
 }
 
 from config_local import *
