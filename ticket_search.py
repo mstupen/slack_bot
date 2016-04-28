@@ -105,7 +105,7 @@ class MessageProcessor(object):
         if user_id is None:
             return self.MESSAGE_USER_NOT_FOUND
 
-        issues = [i for i in self.redmine.issue.filter(assigned_to_id=85, status='open')]
+        issues = [i for i in self.redmine.issue.filter(assigned_to_id=user_id, status='open')]
         issue_ids = [i.id for i in issues]
 
         stories = [i for i in issues if not hasattr(i, 'parent')]
@@ -123,7 +123,7 @@ class MessageProcessor(object):
         if user_id is None:
             return self.MESSAGE_USER_NOT_FOUND
 
-        issues = [i for i in self.redmine.issue.filter(assigned_to_id=85, status='open')]
+        issues = [i for i in self.redmine.issue.filter(assigned_to_id=user_id, status='open')]
         issue_ids = [i.id for i in issues]
 
         stories = [i for i in issues if not hasattr(i, 'parent')]
