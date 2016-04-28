@@ -31,7 +31,6 @@ class MessageProcessor(object):
         self.redmine = Redmine(config.REDMINE_URL, key=config.REDMINE_KEY, requests={'verify': False})
 
     def _get_issue_repr(self, issue):
-        print issue.id
         return u'*{id}*: _{subject}_ *{status}* {assignee}'.format(
             id=issue.id or 'Not saved',
             subject=issue.subject,
@@ -113,10 +112,10 @@ class MessageProcessor(object):
         standalone_tickets = [i for i in issues if hasattr(i, 'parent') and i.parent.id not in issue_ids]
         standalone_tickets_str = '\n'.join(map(lambda issue: self._get_issue_repr(issue), standalone_tickets))
 
-        return '{stories}{tickets}{empty}'.format(
-            stories=('*Stories:*\n%s\n\n' % '\n'.join(map(lambda issue: self._get_issue_repr(issue), stories))) if stories else '',
-            tickets=('*Standalone tickets:*\n%s\n\n' % standalone_tickets_str) if standalone_tickets else '',
-            empty='No issues found' if not stories and not standalone_tickets else '',
+        return u'{stories}{tickets}{empty}'.format(
+            stories=(u'*Stories:*\n%s\n\n' % '\n'.join(map(lambda issue: self._get_issue_repr(issue), stories))) if stories else u'',
+            tickets=(u'*Standalone tickets:*\n%s\n\n' % standalone_tickets_str) if standalone_tickets else u'',
+            empty=u'No issues found' if not stories and not standalone_tickets else u'',
         )
 
     def process_message_issues_auto(self, user_profile):
@@ -131,10 +130,10 @@ class MessageProcessor(object):
         standalone_tickets = [i for i in issues if hasattr(i, 'parent') and i.parent.id not in issue_ids]
         standalone_tickets_str = '\n'.join(map(lambda issue: self._get_issue_repr(issue), standalone_tickets))
 
-        return '{stories}{tickets}{empty}'.format(
-            stories=('*Stories:*\n%s\n\n' % '\n'.join(map(lambda issue: self._get_issue_repr(issue), stories))) if stories else '',
-            tickets=('*Standalone tickets:*\n%s\n\n' % standalone_tickets_str) if standalone_tickets else '',
-            empty='No issues found' if not stories and not standalone_tickets else '',
+        return u'{stories}{tickets}{empty}'.format(
+            stories=(u'*Stories:*\n%s\n\n' % '\n'.join(map(lambda issue: self._get_issue_repr(issue), stories))) if stories else u'',
+            tickets=(u'*Standalone tickets:*\n%s\n\n' % standalone_tickets_str) if standalone_tickets else u'',
+            empty=u'No issues found' if not stories and not standalone_tickets else u'',
         )
 
     def process_message_issue_info(self, issue_id):
@@ -151,7 +150,7 @@ class MessageProcessor(object):
                 set_status_id = status.id
 
         if set_status_id is None:
-            return 'Unknown status, possible: %s' % ', '.join([i.name for i in statuses])
+            return u'Unknown status, possible: %s' % ', '.join([i.name for i in statuses])
 
         issue.status_id = set_status_id
         issue.save()
